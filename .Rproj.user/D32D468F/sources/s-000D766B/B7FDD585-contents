@@ -1,0 +1,1178 @@
+---
+title: "Respiratory SOFA Imputation Revisions"
+author: "Katherine Hoffman"
+pi: "Ed Schenck"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+knit: (function(inputFile, encoding) { 
+      out_dir <- here::here("reports");
+      sd <- format(Sys.Date(), "%Y-%m-%d");
+      out_file <- paste0("revisions_", sd, ".html");
+      rmarkdown::render(inputFile,
+                        encoding=encoding, 
+                        output_file=file.path(out_dir, out_file)) })
+output: 
+  wcmtheme::wcm_html: 
+    toc: true
+    toc_float: true
+    code_folding: hide
+---
+
+```{r setup, echo=T, warning=F, message=F}
+library(tidyverse)
+library(kableExtra)
+library(tidylog)
+library(gt)
+library(ggalluvial)
+library(labelled)
+library(patchwork)
+library(cutpointr)
+library(wesanderson)
+library(gtsummary)
+
+knitr::opts_chunk$set(echo = T, warning=F, message=F)
+
+load(here::here("output/imputation_metrics.rdata"))
+load(here::here("output/imputation_metrics_sf_sens.rdata")) # SF forced
+
+metrics <- metrics %>%  full_join(metrics_sf) 
+
+metrics$predictor <- fct_relevel(factor(metrics$predictor),
+                                 "Missing as Normal", "Modified", "RICE",
+                                 "Severinghaus", "MICE")
+
+# lists for mapping ---------------------------------
+
+pulm_list <- list(
+  "SOFA_pulm_convertedA"="SOFA_pulm_convertedA",
+  "SOFA_pulm_convertedB"="SOFA_pulm_convertedB",
+  "SOFA_pulm_modifiedPulm"= "SOFA_pulm_modifiedPulm",
+  "SOFA_pulm_missingPulmAsNormal"="SOFA_pulm_missingPulmAsNormal",
+  "SOFA_pulm_mice"="SOFA_pulm_mice"
+)
+
+pulm_list_sf <- list(
+  "SOFA_pulm_convertedA_all"="SOFA_pulm_convertedA_all",
+  "SOFA_pulm_convertedB_all"="SOFA_pulm_convertedB_all",
+  "SOFA_pulm_modifiedPulm_all"= "SOFA_pulm_modifiedPulm_all",
+  "SOFA_pulm_missingPulmAsNormal_all"="SOFA_pulm_missingPulmAsNormal_all"
+)
+
+# color palette for resp Substitutions ------------
+
+type_colors <- c("#FF0000","#00A08A","#F2AD00","#5BBCD6","#F98400")
+
+# plotting functions ---------------------------------
+
+# alluvial plots
+
+alluvial_plot <- function(subset, title_lab){
+  temp <- subset %>%
+    unite("pt_enc", PATIENT_NUM, ENCOUNTER_NUM) %>%
+    group_by_at(
+      names(pulm_list)
+    ) %>%
+     count() %>%
+     ungroup() %>%
+     mutate(across(names(pulm_list), ~fct_rev(factor(.)))) %>%
+    to_lodes_form(key = "sofa_type", axes=1:5)# %>%
+  # mutate(number_n = paste0(stratum,"\nN=",n)) # trying to get the labels to be the N and SOFA scorea
+
+  temp$sofa_type <-   # relevel SOFA type
+    factor(
+      temp$sofa_type,
+      levels = c(
+        "SOFA_pulm_missingPulmAsNormal",
+        "SOFA_pulm_modifiedPulm",
+        "SOFA_pulm_convertedA",
+        "SOFA_pulm_convertedB",
+        "SOFA_pulm_mice"
+      ),
+      labels = c("Missing as Normal",
+                 "Modified",
+                 "RICE",
+                 "Severinghaus",
+                 "MICE")
+    )
+  
+temp %>%
+  ggplot(
+      aes(x = sofa_type, stratum = stratum, alluvium = alluvium, y=n, fill = stratum, label = stratum)
+      ) +
+     geom_flow() +
+  geom_stratum() +
+  geom_text(stat = "stratum", size = 3)+
+    scale_x_discrete(
+      expand = c(0.05, 0.05)) +
+    theme_classic() +
+    labs(
+      title = title_lab,
+      y = "Number of Patients",
+      x = "Respiratory SOFA Substituion",
+      fill = "Respiratory\nSOFA Score"
+    )  +
+  scale_fill_manual(values = c(scales::seq_gradient_pal("blue", "orange", "Lab")(seq(0,1,length.out=5)))) +
+  scale_y_continuous(expand=c(0.02,0.02)) +
+  theme(plot.title = element_text(face="bold"))
+}
+
+
+# Forest plots
+forest_plot <- function(subset_name){
+  metrics %>%
+    filter(subset == subset_name, !str_detect(predictor, "iter")) %>%
+    mutate(predictor = fct_rev(predictor)) %>%
+    ggplot(aes(x = predictor, y = auc_mean, ymin = auc_ci_low, ymax = auc_ci_high, col=predictor)) +
+    geom_point(shape=15, size=2) +
+    geom_errorbar(width=.2) +
+    coord_flip() +
+    theme_bw() +
+    #ylim(0.5,1) +
+    scale_color_manual(values = rev(type_colors), guide=F) +
+    labs(y = "AUC (95% CI)", x=NULL, title=subset_name)
+}
+
+# ROC curve directly from a line in metrics
+roc_plot <- function(subset_name){
+   metrics %>% 
+    filter(subset == subset_name, !str_detect(predictor, "iter")) %>%
+    select(predictor, roc_curve) %>%
+    unnest(cols = c(roc_curve)) %>%
+    ggplot(aes(x = 1 - tnr, y = tpr, col=predictor)) +
+        xlab("1 - Specificity") +
+        ylab("Sensitivity") +
+    labs(col = "Respiratory SOFA\nSubstitution", title=subset_name) +
+        theme(aspect.ratio = 1) +
+    geom_line(size=.4) +
+    theme_bw() +
+    scale_color_manual(values = type_colors) +
+    scale_x_continuous(expand=c(0.01,0.01)) +
+    scale_y_continuous(expand=c(0.01,0.01)) +
+    theme(plot.title = element_text(face="bold"))
+}
+
+# Youden curve directly from a line in metrics
+youden_plot <- function(subset_name, ci=T){
+  roc_b_unnest <-
+    metrics %>%
+    filter(subset == subset_name, !str_detect(predictor, "iter")) %>%
+    select(predictor, boot) %>%
+    unnest(cols = c("boot")) %>%
+    unnest(cols = c("roc_curve_b")) %>%
+    filter(is.finite(x.sorted)) %>%
+    select(x.sorted, m, predictor) %>%
+    group_by(x.sorted, predictor) %>%
+    summarise(ymin = stats::quantile(.data$m, (.05) / 2, na.rm = TRUE),
+                                 ymax = stats::quantile(.data$m, 1 - (.05) / 2, na.rm = TRUE))
+  
+  res_unnest <-
+    metrics %>%
+    filter(subset == subset_name, !str_detect(predictor, "iter")) %>%
+    select(predictor, roc_curve) %>%
+    unnest(cols = c("roc_curve")) %>%
+    filter(is.finite(x.sorted)) 
+  
+  
+  res_unnest <-
+    full_join(roc_b_unnest, res_unnest)
+  
+  if(ci == T){ # option to turn confidence intervals on/off
+    p <- ggplot(res_unnest, aes(x = x.sorted, y = m,
+                                           ymax = ymax,
+                                           ymin = ymin,
+                                           col=predictor,
+                                           fill=predictor)) +
+          geom_ribbon(alpha = 0.2, size = 0) +
+          scale_fill_manual(values = type_colors)
+
+  }
+  else{
+     p <- ggplot(res_unnest, aes(x = x.sorted, y = m,
+                                           col=predictor,
+                                           fill=predictor)) 
+  }
+  p + 
+    geom_line() +
+    geom_point() +
+    labs(y="Youden Index",
+         x="SOFA Score",
+         fill="Respiratory SOFA\nSubstitution",
+         col="Respiratory SOFA\nSubstitution",
+         title=subset_name) +
+    theme_bw() +
+    scale_color_manual(values = type_colors) 
+}
+
+
+# Plot the accuracy by SOFA score directly from row in metrics
+accuracy_plot <- function(subset_name){
+  roc_b_unnest <-
+    metrics %>%
+    filter(subset == subset_name, !str_detect(predictor, "iter")) %>%
+    select(predictor, boot) %>%
+    unnest(cols = c("boot")) %>%
+    unnest(cols = c("roc_curve_b")) %>%
+    filter(is.finite(x.sorted)) %>%
+    mutate(accuracy = (tp + tn) / (tp + fp + tn + fn)) %>%
+    select(x.sorted, accuracy, predictor) %>%
+    group_by(predictor, x.sorted) %>%
+    summarise(accuracy = mean(accuracy))
+  
+  roc_b_unnest %>%
+  ggplot( aes(x = x.sorted, y = accuracy,
+                                           col=predictor,
+                                           fill=predictor)) + 
+    geom_line() +
+    geom_point() +
+    labs(y="Accuracy",
+         x="SOFA Score",
+         fill="Respiratory SOFA\nSubstitution",
+         col="Respiratory SOFA\nSubstitution",
+         title=subset_name) +
+    theme_bw() +
+    scale_color_manual(values = type_colors) 
+}
+
+# Mortality frequency plot
+mort_freq_plot <- function(dat, subs, subtitle, max_lim, sofa_limit = 25, export_plot = T){
+  
+mort_freq <-
+  dat %>%
+  select(one_of(unlist(subs)), death_inHosp_i) %>%
+  pivot_longer(cols = starts_with("SOFA"), names_to = "predictor", values_to = "sofa") %>%
+  mutate(sofa = case_when(sofa >= sofa_limit ~ paste0(sofa_limit, "+"), TRUE ~ as.character(sofa))) %>%
+  group_by(sofa, predictor, death_inHosp_i) %>%
+  count() %>%
+  group_by(sofa, predictor) %>%
+  mutate(freq = n/sum(n))
+
+# relevel/label predictor and sofa for the plots
+mort_freq$predictor <- factor(mort_freq$predictor,
+                              levels=c("SOFA_total_missingPulmAsNormal",
+                                       "SOFA_total_modifiedPulm",
+                                 "SOFA_total_convertedA",
+                               "SOFA_total_convertedB",
+                                 "SOFA_total_mice"),
+                              labels = c("Missing as Normal",
+                                         "Modified",
+                                 "RICE",
+                                 "Severinghaus",
+                                 "MICE"))
+
+mort_freq$sofa <- fct_relevel(mort_freq$sofa,function(x){as.character(0:17)})
+
+if (export_plot == T){
+  
+# plot mortality % by SOFA score
+mort_freq %>%
+  filter(death_inHosp_i == 1) %>%
+  ggplot(aes(sofa, freq, fill=predictor)) +
+  geom_bar(stat="identity", position="dodge") +
+  scale_fill_manual(values = type_colors) +
+  theme_bw() +
+  labs(x = "Total SOFA Score", y="In-hospital Mortality (%)", fill="Respiratory SOFA\nSubstitution", title= subtitle) +
+  scale_y_continuous(expand=c(0,0), limits = c(0, max_lim))
+}
+
+else{
+  
+mort_freq %>%
+  filter(death_inHosp_i == 1)
+}
+}
+```
+
+```{r}
+### Mcnemars test
+
+# test each non-missing as normal substitution method for the subset  of interest
+test_sens_spec <- function(subset_name){
+  metrics_subset <-
+    metrics %>%
+    filter(subset == subset_name)
+  map2(names(sub_list[c(1,2,3,5)]), sub_list[c(1,2,3,5)], ~mcnem(metrics_subset, .x, .y) %>%
+         mutate(subset = subset_name))
+}
+
+# make a table with the classifications using the optimal cutpoint
+make_cutpoint_tbl <- function(metric_subset, sub_name, sub_var){
+  temp <-
+    metric_subset %>%
+    filter(predictor == sub_name)
+  cp <- temp$optimal_cutpoint
+  t1_dat <- temp$data[[1]] %>%
+    mutate(class = case_when(.data[[sub_var]] >= cp ~ 1,
+                             TRUE ~ 0))
+  return(table(t1_dat$class, t1_dat$death_inHosp_i))
+}
+
+# get the mcnemar pval
+mcnem <- function(metric_subset, sub_name, sub_var){
+  test_t <- make_cutpoint_tbl(metric_subset, sub_name, sub_var)
+  ref_t <- make_cutpoint_tbl(metric_subset, "Missing as Normal", "SOFA_total_missingPulmAsNormal")
+  p <- mcnemar.test(test_t, ref_t)$p.value
+  return(tibble(predictor = sub_name, p = p))
+}
+
+# map over all subsets and substitution methods
+mcnem_results <- map_dfr(names(data_list), ~test_sens_spec(.x)) %>%
+  select(subset, predictor, p)
+```
+
+# Methods notes
+
+- Conditional multiple imputation (MICE) was used to estimate a new PF ratio using variables of age, sex, race; Quan Elixhauser comorbidities; day 1 min and max HR, RR, temperature, and blood pressure (S,D,M); day 1 max potassuium, WBC, albumin, sodium, bicarbonate, and hemoglobin; day 1 SF ratio, PaO2, FiO2, SpO2, and day 1 SOFA score components. Five multiply imputed data sets were created using the `mice` package in `R`. The bootstrapped estimates for AUC were pooled and 95% Confidence Intervals were computed using Rubin's Rules. 
+
+- Sensitivity and specificity are computed at the optimal SOFA cutpoint, which maximizes the Youden index.
+
+  * Sensitivity: True positive rate
+  
+  * Specificity: True negative rate
+  
+- Hosmer Lemeshow goodness of fit test performed using 5 groups. Large values of the Chi square statistic and small p-values indicate a poor goodness of fit for the model.
+
+# Tables
+
+```{r}
+sens_spec_ci1 <- map_dfr(1:nrow(metrics), function(x){
+  metrics_row <- metrics[x,]
+  sens_sd <- sd(metrics_row$boot[[1]]$sensitivity_oob)
+  spec_sd <- sd(metrics_row$boot[[1]]$specificity_oob)
+  tibble(subset = metrics_row$subset,
+         predictor = metrics_row$predictor,
+         sens_ci = paste0(round(metrics_row$sensitivity,3), " (", round(metrics_row$sensitivity - 1.96*sens_sd, 3), ", ", round(metrics_row$sensitivity + 1.96*sens_sd,3), ")"),
+         spec_ci = paste0(round(metrics_row$specificity,3), " (", round(metrics_row$specificity - 1.96*sens_sd, 3), ", ", round( metrics_row$specificity + 1.96*sens_sd,3), ")")
+         )
+}
+)
+
+sens_spec_ci1 %>%
+  arrange(subset, predictor) %>%
+  filter(!(str_detect(predictor,"iter")))%>%
+  write_csv(here::here("output/manuscript_tbls/sens_spec_cis.csv"))
+
+sens_spec_ci2 <- map_dfr(1:nrow(metrics), function(x){
+  metrics_row <- metrics[x,]
+  sens <- boot_ci(metrics_row, sensitivity )
+  spec <- boot_ci(metrics_row, specificity)
+  tibble(subset = metrics_row$subset,
+         predictor = metrics_row$predictor,
+         sens_ci = paste0(sens$values[1],sens$values[2]),
+         spec_ci_low = paste0(spec$values[1],spec$values[2])
+         )
+}
+)
+
+
+metrics_tbl <-
+  metrics %>%
+  left_join(sens_spec_ci1) %>%
+  arrange(predictor) %>%
+  mutate( auc_ci = paste0("(",round(auc_ci_low, 3),", ",round(auc_ci_high,3),")"),
+          spec_ci = paste0("(",round(spec_ci_low, 3),", ",round(spec_ci_high,3),")"),
+           sens_ci = paste0("(",round(sens_ci_low, 3),", ",round(sens_ci_high,3),")")
+          ) %>%
+  select(subset, predictor, AUC, auc_ci, sensitivity, sens_ci, specificity, spec_ci, youden, accuracy = acc, optimal_cutpoint, hl_stat, hl_pval) %>%
+  filter(!str_detect(predictor, "iter"),
+        # subset != "All Patients, using SF instead of PF"
+        ) %>%
+  mutate(hl_pval = ifelse(hl_pval < .001, "<.001", hl_val)
+        ) %>%
+  group_by(subset) %>%
+  gt() %>%
+  fmt_number(columns = one_of(c("AUC","sensitivity","specificity","youden","accuracy","hl_stat")), decimals = 3) %>%
+  tab_options(table.font.size = 'small', data_row.padding = gt::px(1)) %>%
+  cols_label(auc_ci = "AUC 95% CI",
+             predictor = "Type of Respiratory SOFA",
+             sensitivity = "Sensitivity",
+             sens_ci = "Sensitivity 95% CI",
+             specificity = "Specificity",
+             spec_ci = "Specificity 95% CI",
+             youden = "Youden Index",
+             accuracy = "Accuracy",
+             optimal_cutpoint = "Optimal SOFA Cutpoint",
+             hl_stat = "Chi-Square Statistic",
+             hl_pval = "HL p-value"
+             )
+
+metrics_tbl
+
+metrics_tbl %>%
+  as.data.frame() %>%
+  select(-youden) %>%
+  write_csv(here::here(paste0("output/metrics_tbl_",lubridate::today(),".csv")))
+```
+
+# Mcnemar's results
+
+```{r}
+mcnem_results %>%
+  group_by(subset) %>%
+  gt() %>%
+  fmt_number("p", decimals = 3) %>%
+  tab_header("Comparing sensitivity/specificity to Missing as Normal using McNemar's chi-square test") %>%
+    tab_options(table.font.size = 'small', data_row.padding = gt::px(1)) 
+```
+
+
+# Figures
+
+## Alluvial Plots
+
+```{r, fig.height=4}
+alluvial_plots <- imap(data_list, ~alluvial_plot( .x, .y))
+walk(alluvial_plots, ~print(.x))
+
+p <- (alluvial_plots[[1]] + xlab("")
+      ) +
+  (alluvial_plots[[2]] + xlab("")
+   ) +
+  (alluvial_plots[[3]] + xlab("")
+   ) +
+  plot_layout(ncol = 1, guides = "collect", tag_level = "new") +
+  plot_annotation(tag_levels = c('A'))
+ggsave(here::here("output/manuscript_figs/f1.jpg"), p,width=6.5, height=12)
+ggsave(here::here("output/manuscript_figs/f1.tiff"), p, width=6, height=11.5, dpi="print")
+
+
+p <- (alluvial_plots[[6]]  ) +
+  (alluvial_plots[[7]] ) +
+    (alluvial_plots[[8]] ) +
+  (alluvial_plots[[9]] ) +
+  plot_layout(ncol = 2, guides = "collect", tag_level = "new") +
+  plot_annotation(tag_levels = c('A'))
+ggsave(here::here("output/manuscript_figs/alluv_units.jpg"), p,width=12, height=8)
+ggsave(here::here("output/manuscript_figs/alluv_units.tiff"), p,width=12, height=8, dpi="print")
+
+```
+
+```{r}
+# Alluvial plots for Forced SF. Stole my own function code because adding an argument seemed complicated.
+temp <- dat_all_sf %>%
+    unite("pt_enc", PATIENT_NUM, ENCOUNTER_NUM) %>%
+    group_by_at(
+      names(pulm_list_sf)
+    ) %>%
+     count() %>%
+     ungroup() %>%
+     mutate(across(names(pulm_list_sf), ~fct_rev(factor(.)))) %>%
+    to_lodes_form(key = "sofa_type", axes=1:4)
+
+  temp$sofa_type <-   # relevel SOFA type
+    factor(
+      temp$sofa_type,
+      levels = c(
+        "SOFA_pulm_missingPulmAsNormal_all",
+        "SOFA_pulm_modifiedPulm_all",
+        "SOFA_pulm_convertedA_all",
+        "SOFA_pulm_convertedB_all"),
+      labels = c("Missing as Normal",
+                 "Modified",
+                 "RICE",
+                 "Severinghaus"))
+
+  
+# for this alluvial plot we see many patients with 4's for RICE go to 1's in Severinghaus. All are patients with Fio2 of .7 and Spo2 of 100
+temp %>%
+  ggplot(
+      aes(x = sofa_type, stratum = stratum, alluvium = alluvium, y=n, fill = stratum, label = stratum)
+      ) +
+     geom_flow() +
+  geom_stratum() +
+  geom_text(stat = "stratum", size = 3)+
+    scale_x_discrete(
+      expand = c(0.05, 0.05)) +
+    theme_classic() +
+    labs(
+      title = "All Patients, using SF instead of PF",
+      y = "Number of Patients",
+      x = "Type of Respiratory SOFA",
+      fill = "Respiratory SOFA\nMissing as Normal"
+    )  +
+  scale_fill_manual(values = c(scales::seq_gradient_pal("blue", "orange", "Lab")(seq(0,1,length.out=5)))) +
+  scale_y_continuous(expand=c(0.02,0.02))
+```
+
+
+## Forest plot + ROC Curve
+
+```{r, fig.height=4}
+forest_plots <- map(names(data_list), ~forest_plot(.x))
+roc_plots <- map(names(data_list), ~roc_plot(.x))
+
+plot_roc_and_forest <- function(x){
+ idx <- which(names(data_list) == x)
+ roc_plot <- roc_plots[[idx]] + ggtitle("")
+ forest_plot <- forest_plots[[idx]] + ggtitle("")
+  roc_plot + forest_plot +
+  plot_layout( ncol=2, guides="collect", tag_level = 'new') +
+   plot_annotation(title = x, tag_levels = c('A')) & theme(legend.position = 'bottom')
+}
+
+roc_and_forest_plots <- map(names(data_list), ~plot_roc_and_forest(.x))
+walk(roc_and_forest_plots, ~print(.x))
+
+roc_plot_sf <- roc_plot("All Patients, using SF instead of PF") + 
+    scale_color_manual(values = type_colors[1:4], guide=F) + ggtitle("")
+forest_plot_sf <- forest_plot("All Patients, using SF instead of PF")+ 
+    scale_color_manual(values = rev(type_colors[1:4]), guide=F) + ggtitle("")
+roc_plot_sf + forest_plot_sf +
+  plot_layout( ncol=2, guides="collect", tag_level = 'new') +
+   plot_annotation(title = "All Patients, using SF instead of PF", tag_levels = c('A')) & theme(legend.position = 'bottom')
+
+p <-
+  (roc_plots[[1]]) + (forest_plots[[1]]  + ggtitle("") +
+    # set transparency
+    theme(
+        plot.background = element_rect(fill = "transparent",colour = NA),
+        plot.title = element_text(face = "bold")
+        )) + 
+(roc_plots[[2]] ) + (forest_plots[[2]] + ggtitle("")+
+    # set transparency
+    theme(
+        plot.background = element_rect(fill = "transparent",colour = NA),
+        plot.title = element_text(face = "bold")
+        )) + 
+(roc_plots[[3]]) + (forest_plots[[3]]+ ggtitle("")+
+    # set transparency
+    theme(
+        plot.background = element_rect(fill = "transparent",colour = NA),
+        plot.title = element_text(face = "bold")
+        )) +
+  plot_annotation(tag_levels="A") +
+  plot_layout(ncol=2, guides="collect") &
+  theme(legend.position = "bottom") 
+ggsave(here::here("output/manuscript_figs/f2.jpg"), p, width=7, height=9)
+ggsave(here::here("output/manuscript_figs/f2.tiff"), p, width=7, height=9, dpi="print")
+
+# this code is broken ATM because R no longer wants you to save plots -- fix later if need p1 and p2 again (vent plot not reported anymore)
+# # load in vent plot
+# load(here::here("output/vent_plots.rdata"))
+# (roc_plots[[4]] +
+#   labs(title="Patients with SpO2 \u2264 96%")) +
+#   (forest_plots[[4]] + ggtitle("") +
+#     # set transparency
+#     theme(plot.background = element_rect(fill = "transparent",colour = NA))) +
+# (roc_plot_sf +
+#   labs(title = "All Patients, using SF instead of PF")) +
+#  ( forest_plot_sf + theme(plot.background = element_rect(fill = "transparent",colour = NA))) +
+#   (p1 + labs(title="All Patients, Outcome of prolonged Mechanical Ventilation")) +
+#   (p2 + labs(title="") +    theme(plot.background = element_rect(fill = "transparent",colour = NA))) + 
+#   plot_annotation(tag_levels="A") +
+#   plot_layout(ncol=2, guides="collect") &
+#   theme(legend.position = "bottom") 
+# ggsave(here::here("output/manuscript_figs/supp_roc_sens.jpg"), width=7, height=10)
+
+p <-
+  (roc_plots[[6]]) + (forest_plots[[6]]  + ggtitle("") +
+    # set transparency
+    theme(
+        plot.background = element_rect(fill = "transparent",colour = NA)
+        )) + 
+(roc_plots[[7]] ) + (forest_plots[[7]] + ggtitle("")+
+    # set transparency
+    theme(
+        plot.background = element_rect(fill = "transparent",colour = NA)
+        )) + 
+(roc_plots[[8]]) + (forest_plots[[8]]+ ggtitle("")+
+    # set transparency
+    theme(
+        plot.background = element_rect(fill = "transparent",colour = NA)
+        )) +
+  (roc_plots[[9]]) + (forest_plots[[9]]+ ggtitle("")+
+    # set transparency
+    theme(
+        plot.background = element_rect(fill = "transparent",colour = NA)
+        )) +
+  plot_annotation(tag_levels="A") +
+  plot_layout(ncol=2, guides="collect") &
+  theme(legend.position = "bottom") 
+ggsave(here::here("output/manuscript_figs/supp_roc_forest.jpg"), p, width=7, height=11)
+```
+
+## Youden + Accuracy Curves
+
+```{r, fig.height=4}
+youden_plots <- map(names(data_list), ~youden_plot(.x, ci=F))
+accuracy_plots <- map(names(data_list), ~accuracy_plot(.x))
+
+plot_youden_and_accuracy <- function(x){
+ idx <- which(names(data_list) == x)
+ youden_plot <- youden_plots[[idx]] + ggtitle("")
+ accuracy_plot <- accuracy_plots[[idx]] + ggtitle("")
+  youden_plot + accuracy_plot +
+  plot_layout( ncol=2, guides="collect", tag_level = 'new') +
+   plot_annotation(title = x, tag_levels = c('A')) & theme(legend.position = 'bottom')
+}
+
+youden_and_accuracy_plots <- map(names(data_list), ~plot_youden_and_accuracy(.x))
+walk(youden_and_accuracy_plots, ~print(.x))
+
+youden_plot_sf <- youden_plot("All Patients, using SF instead of PF", ci=F) + 
+    scale_color_manual(values = rev(type_colors[1:4]), guide=F) + ggtitle("")
+accuracy_plot_sf <- accuracy_plot("All Patients, using SF instead of PF") + 
+    scale_color_manual(values = rev(type_colors[1:4]), guide=F) + ggtitle("")
+youden_plot_sf + accuracy_plot_sf +
+  plot_layout( ncol=2, guides="collect", tag_level = 'new') +
+   plot_annotation(title = "All Patients, using SF instead of PF", tag_levels = c('A')) & theme(legend.position = 'bottom')
+```
+
+# Extra reviewer responses
+
+## Mortality by SOFA 1
+
+```{r, fig.width=8}
+mort_freq_plot(data_list[[1]], sub_list[1:5], names(data_list)[[1]], max_lim = .82, sofa_limit = 17)
+mort_freq_plot(data_list[[2]], sub_list[1:5], names(data_list)[[2]], max_lim = .7, sofa_limit = 11)
+mort_freq_plot(data_list[[3]], sub_list[1:5], names(data_list)[[3]], max_lim = .4)
+mort_freq_plot(data_list[[4]], sub_list[1:5], names(data_list)[[4]], max_lim = .82)
+
+p <-
+  (mort_freq_plot(data_list[[1]], sub_list[1:5], names(data_list)[[1]], max_lim = .82, sofa_limit = 17) + theme(plot.title = element_text(face = "bold"))) +
+(mort_freq_plot(data_list[[2]], sub_list[1:5], names(data_list)[[2]], max_lim = .7, sofa_limit = 11) + theme(plot.title = element_text(face = "bold"))) +
+(mort_freq_plot(data_list[[3]], sub_list[1:5], names(data_list)[[3]], max_lim = .4) + theme(plot.title = element_text(face = "bold"))) +
+  plot_layout(guides="collect",ncol=1) +
+  plot_annotation(tag_levels="A")
+ggsave(here::here("output/manuscript_figs/mortality.jpg"), p, width=7, height=11)
+ggsave(here::here("output/manuscript_figs/mortality.tiff"), p, width=7, height=11, dpi="print")
+
+mort_freq_plot(data_list[[1]], sub_list[1:5], names(data_list)[[1]], max_lim = .82, export_plot = F) %>% write_csv(here::here("output/manuscript_tbls/mort_freq_all.csv"))
+mort_freq_plot(data_list[[2]], sub_list[1:5], names(data_list)[[2]], max_lim = .82, export_plot = F)%>% write_csv(here::here("output/manuscript_tbls/mort_freq_spo96.csv"))
+mort_freq_plot(data_list[[3]], sub_list[1:5], names(data_list)[[3]], max_lim = .4, export_plot = F)%>% write_csv(here::here("output/manuscript_tbls/mort_freq_predom.csv"))
+
+```
+
+<!-- ## Mortality by SOFA 2 -->
+
+```{r, fig.height=8, fig.width=8, eval=F}
+mort_freq %>%
+  filter(death_inHosp_i == 1) %>%
+  ggplot(aes(predictor, n, fill=predictor)) +
+  geom_bar(stat="identity", position="dodge") +
+   scale_fill_manual(values = type_colors) +
+  theme_bw() +
+  labs(x = "Respiratory SOFA Substitution", y="In-hospital Mortality (N)", fill="Respiratory SOFA\nSubstitution", title="Mortality by Total SOFA Score and Respiratory SOFA Substitution") +
+  facet_wrap(~sofa, scales = "free_y", ncol=4) +
+  theme(axis.ticks.x =  element_blank(), axis.text.x = element_blank())
+```
+
+## Numbers of each type in reference to Missing as Normal
+
+I'm not sure I'll be able to add these to the alluvial plots. Are these still the numbers we need, or do we just need raw counts now that our color scales are different?
+
+```{r}
+map(pulm_list[-4], function(x){
+   dat_all %>%
+    group_by(SOFA_pulm_missingPulmAsNormal, .data[[x]]) %>%
+    count(name = paste0("count_", x)) %>%
+    rename(new_sofa = .data[[x]])
+}
+) %>%
+  reduce(left_join) %>%
+  ungroup() %>%
+  gt() %>%
+  cols_label(
+    SOFA_pulm_missingPulmAsNormal = "Missing as Normal Resp. SOFA",
+    new_sofa = "Imputed Resp. SOFA",
+    count_SOFA_pulm_convertedA = "RICE",
+    count_SOFA_pulm_convertedB = "Severinghaus",
+    count_SOFA_pulm_modifiedPulm = "Modified",
+    count_SOFA_pulm_mice = "MICE"
+  ) %>%
+  tab_spanner(
+    label = "Imputed Resp. SOFA Count",
+    columns = vars(count_SOFA_pulm_convertedA, count_SOFA_pulm_convertedB,
+                   count_SOFA_pulm_modifiedPulm, count_SOFA_pulm_mice)
+  )
+ 
+```
+
+## Updated numbers for table 2
+
+### Among all patients
+
+```{r}
+t2_a <- map_dfc(pulm_list, function(x) {
+  sofa_total <- str_replace(x, "SOFA_pulm", "SOFA_total")
+  out <-
+    dat_all %>%
+   # group_by(.data[[x]]) %>%
+    summarise(
+            median = median(.data[[x]]),
+            lower_iqr = quantile(.data[[x]], .25),
+            upper_iqr = quantile(.data[[x]], .75)) %>%
+    mutate(med_iqr = paste0(median, " (", lower_iqr, ", ", upper_iqr,")")) %>%
+    select( med_iqr)
+  #colnames(out)[1] <- "sofa_pulm"
+  colnames(out) <- paste0(x, "_", colnames(out))
+  return(out)
+}
+) %>%
+  gt() %>%
+  tab_header("Respiratory SOFA Median IQR by Substitution Method")
+t2_a
+t2_a %>% as.data.frame() %>% write_csv(here::here("output/manuscript_tbls/t2_a.csv"))
+
+
+# get the total sofa median iqrs for each sofa pulm conversion
+t2_b <-
+  map_dfc(pulm_list, function(x) {
+  sofa_total <- str_replace(x, "SOFA_pulm", "SOFA_total")
+  out <-
+    dat_all %>%
+    group_by(.data[[x]]) %>%
+    summarise(n = n(),
+            median = median(.data[[sofa_total]]),
+            lower_iqr = quantile(.data[[sofa_total]], .25),
+            upper_iqr = quantile(.data[[sofa_total]], .75)) %>%
+    mutate(med_iqr = paste0(median, " (", lower_iqr, ", ", upper_iqr,")")) %>%
+    select(.data[[x]], n, med_iqr)
+  colnames(out)[1] <- "sofa_pulm"
+  colnames(out)[2:3] <- paste0(x, "_", colnames(out)[2:3])
+  return(out)
+}
+) %>%
+  select(sofa_pulm = sofa_pulm...1, starts_with("SOFA_pulm_")) %>%
+  gt() %>%
+  tab_header("SOFA Total Median IQR by Substitution Method and Respiratory SOFA Score")
+t2_b
+t2_b %>% as.data.frame() %>% write_csv(here::here("output/manuscript_tbls/t2_b.csv"))
+
+t2_c <- map_dfc(pulm_list, function(x) {
+  sofa_total <- str_replace(x, "SOFA_pulm", "SOFA_total")
+  out <-
+    dat_all %>%
+   # group_by(.data[[x]]) %>%
+    summarise(
+            median = median(.data[[sofa_total]]),
+            lower_iqr = quantile(.data[[sofa_total]], .25),
+            upper_iqr = quantile(.data[[sofa_total]], .75)) %>%
+    mutate(med_iqr = paste0(median, " (", lower_iqr, ", ", upper_iqr,")")) %>%
+    select( med_iqr)
+  #colnames(out)[1] <- "sofa_pulm"
+  colnames(out) <- paste0(x, "_", colnames(out))
+  return(out)
+}
+) %>%
+  gt() %>%
+  tab_header("SOFA Total Median IQR by Substitution Method")
+t2_c
+t2_c %>% as.data.frame() %>% write_csv(here::here("output/manuscript_tbls/t2_c.csv"))
+
+# map_dfc(pulm_list, function(x) {
+#   sofa_total <- str_replace(x, "SOFA_pulm", "SOFA_total")
+#   dat_all %>% pull(sofa_total)
+# }
+# ) %>%
+#   pivot_longer(everything()) %>%
+#   kruskal.test(value ~ name, data = .)
+
+
+violin_data <- map_dfc(pulm_list, function(x) {
+  sofa_total <- str_replace(x, "SOFA_pulm", "SOFA_total")
+  dat_all %>% pull(sofa_total)
+}
+) %>%
+  pivot_longer(everything())  %>%
+  mutate(name = factor(name),
+    name = fct_recode(name, "RICE" = "SOFA_pulm_convertedA",
+                            "Severinghaus" = "SOFA_pulm_convertedB",
+                            "Modified" = "SOFA_pulm_modifiedPulm",
+                            "Missing as Normal" = "SOFA_pulm_missingPulmAsNormal",
+                      "MICE" = "SOFA_pulm_mice"))
+
+
+violin_data$name <- fct_relevel(factor(violin_data$name),
+                                 "Missing as Normal", "Modified", "RICE",
+                                 "Severinghaus", "MICE")
+
+source("https://gist.githubusercontent.com/benmarwick/2a1bb0133ff568cbe28d/raw/fb53bd97121f7f9ce947837ef1a4c65a73bffb3f/geom_flat_violin.R")
+
+violin_data %>%
+    ggplot(aes(name, value, fill=name)) +
+    geom_flat_violin(position = position_nudge(x = 0.2, y = 0), 
+                     bw = .8) +
+    geom_boxplot(width=.2, outlier.color="NA", col="black") +
+  #geom_jitter(width=.1, alpha=.005) +
+  theme_bw() +
+  guides(col = F, fill=F) +
+  labs(x = "Respiratory SOFA Substitution", y="Total SOFA Distribution") +
+  #scale_y_continuous(expand=c(0,0)) +
+  scale_fill_manual(values = type_colors)
+ggsave(here::here("output/manuscript_figs/violin1.jpg"), width=7, height=4.5)
+
+
+violin_data %>%
+    ggplot(aes(name, value, fill=name)) +
+  geom_violin(bw=.6) +
+    #geom_flat_violin(position = position_nudge(x = 0.2, y = 0), alpha = 0.8,
+    #                 bw = .8) +
+    geom_boxplot(width=.2, outlier.color="NA", col="black", fill="white") +
+  #geom_jitter(width=.1, alpha=.005) +
+  theme_bw() +
+  guides(col = F, fill=F) +
+  labs(x = "Respiratory SOFA Substitution", y="Total SOFA Distribution") +
+  #scale_y_continuous(expand=c(0,0)) +
+  scale_fill_manual(values = type_colors)
+ggsave(here::here("output/manuscript_figs/violin2.jpg"), width=7, height=4.5)
+
+
+violin_data %>%
+    ggplot(aes(name, value, fill=name)) +
+  geom_violin(bw=.6) +
+    #geom_flat_violin(position = position_nudge(x = 0.2, y = 0), alpha = 0.8,
+    #                 bw = .8) +
+    geom_boxplot(width=.2, outlier.color="NA", col="black", fill="white") +
+  theme_bw() +
+  guides(col = F, fill=F) +
+  labs(x = "Respiratory SOFA Substitution", y="Total SOFA Distribution") +
+  scale_y_continuous(expand=c(0,0)) +
+  scale_fill_manual(values = type_colors) +
+  coord_flip()
+ggsave(here::here("output/manuscript_figs/violin3.jpg"), width=7, height=4.5)
+
+```
+##Supplemental table - Table 2, among those without a Pao2
+
+```{r}
+st2_a <- map_dfc(pulm_list, function(x) {
+  sofa_total <- str_replace(x, "SOFA_pulm", "SOFA_total")
+  out <-
+    dat_all %>%
+    filter(is.na(SOFApulm_PF_ratio_d1)) %>%
+   # group_by(.data[[x]]) %>%
+    summarise(
+            median = median(.data[[x]]),
+            lower_iqr = quantile(.data[[x]], .25),
+            upper_iqr = quantile(.data[[x]], .75)) %>%
+    mutate(med_iqr = paste0(median, " (", lower_iqr, ", ", upper_iqr,")")) %>%
+    select( med_iqr)
+  #colnames(out)[1] <- "sofa_pulm"
+  colnames(out) <- paste0(x, "_", colnames(out))
+  return(out)
+}
+) %>%
+  gt() %>%
+  tab_header("Respiratory SOFA Median IQR by Substitution Method")
+st2_a
+st2_a %>% as.data.frame() %>% write_csv(here::here("output/manuscript_tbls/st2_a.csv"))
+
+
+# get the total sofa median iqrs for each sofa pulm conversion
+st2_b <-
+  map_dfc(pulm_list, function(x) {
+  sofa_total <- str_replace(x, "SOFA_pulm", "SOFA_total")
+  out <-
+    dat_all %>%
+    filter(is.na(SOFApulm_PF_ratio_d1)) %>%
+    group_by(.data[[x]]) %>%
+    summarise(n = n(),
+            median = median(.data[[sofa_total]]),
+            lower_iqr = quantile(.data[[sofa_total]], .25),
+            upper_iqr = quantile(.data[[sofa_total]], .75)) %>%
+    mutate(med_iqr = paste0(median, " (", lower_iqr, ", ", upper_iqr,")")) %>%
+    select(.data[[x]], n, med_iqr)
+  colnames(out)[1] <- "sofa_pulm"
+  colnames(out)[2:3] <- paste0(x, "_", colnames(out)[2:3])
+  return(out)
+}
+) %>%
+  select(sofa_pulm = sofa_pulm...1, starts_with("SOFA_pulm_")) %>%
+  gt() %>%
+  tab_header("SOFA Total Median IQR by Substitution Method and Respiratory SOFA Score")
+st2_b
+st2_b %>% as.data.frame() %>% write_csv(here::here("output/manuscript_tbls/st2_b.csv"))
+
+# st2_b %>% select(sofa_pulm, SOFA_pulm_missingPulmAsNormal_n, SOFA_pulm_modifiedPulm_n, SOFA_pulm_convertedA_n, SOFA_pulm_convertedB_n, SOFA_pulm_mice_n) %>% arrange(desc(sofa_pulm))
+
+st2_c <- map_dfc(pulm_list, function(x) {
+  sofa_total <- str_replace(x, "SOFA_pulm", "SOFA_total")
+  out <-
+    dat_all %>%
+   # group_by(.data[[x]]) %>%
+    filter(is.na(SOFApulm_PF_ratio_d1)) %>%
+    summarise(
+            median = median(.data[[sofa_total]]),
+            lower_iqr = quantile(.data[[sofa_total]], .25),
+            upper_iqr = quantile(.data[[sofa_total]], .75)) %>%
+    mutate(med_iqr = paste0(median, " (", lower_iqr, ", ", upper_iqr,")")) %>%
+    select( med_iqr)
+  #colnames(out)[1] <- "sofa_pulm"
+  colnames(out) <- paste0(x, "_", colnames(out))
+  return(out)
+}
+) %>%
+  gt() %>%
+  tab_header("SOFA Total Median IQR by Substitution Method")
+st2_c
+st2_c %>% as.data.frame() %>% write_csv(here::here("output/manuscript_tbls/st2_c.csv"))
+```
+
+##Supplemental table - Table 2, among those with predominant respiratory failure
+
+```{r}
+st3_a <- map_dfc(pulm_list, function(x) {
+  sofa_total <- str_replace(x, "SOFA_pulm", "SOFA_total")
+  out <-
+    dat_all %>%
+    filter(!is.na(SOFA_pulm_half)) %>%
+   # group_by(.data[[x]]) %>%
+    summarise(
+            median = median(.data[[x]]),
+            lower_iqr = quantile(.data[[x]], .25),
+            upper_iqr = quantile(.data[[x]], .75)) %>%
+    mutate(med_iqr = paste0(median, " (", lower_iqr, ", ", upper_iqr,")")) %>%
+    select( med_iqr)
+  #colnames(out)[1] <- "sofa_pulm"
+  colnames(out) <- paste0(x, "_", colnames(out))
+  return(out)
+}
+) %>%  select(contains("missing"),
+         contains("mod"),
+         contains("converted"),
+         contains("MICE")
+         ) %>%
+  gt() %>%
+  tab_header("Respiratory SOFA Median IQR by Substitution Method")
+
+
+st3_a
+st3_a %>% as.data.frame() %>% write_csv(here::here("output/manuscript_tbls/st3_a.csv"))
+
+
+# get the total sofa median iqrs for each sofa pulm conversion
+st3_b_temp <-
+  map(pulm_list, function(x) {
+  sofa_total <- str_replace(x, "SOFA_pulm", "SOFA_total")
+  out <-
+    dat_all %>%
+    filter(!is.na(SOFA_pulm_half)) %>%
+    group_by(.data[[x]]) %>%
+    summarise(n = n(),
+            median = median(.data[[sofa_total]]),
+            lower_iqr = quantile(.data[[sofa_total]], .25),
+            upper_iqr = quantile(.data[[sofa_total]], .75)) %>%
+    mutate(med_iqr = paste0(median, " (", lower_iqr, ", ", upper_iqr,")")) %>%
+    select(.data[[x]], n, med_iqr) 
+  colnames(out)[1] <- "sofa_pulm"
+  #colnames(out)[2:3] <- paste0(x, "_", colnames(out)[2:3])
+  return(out %>% select(sofa_pulm, n)%>%
+    arrange(desc(sofa_pulm)))
+}
+) 
+
+st3_b_temp %>%
+  bind_rows(.id = "id") %>% write_csv(here::here("output/manuscript_tbls/st3_b.csv"))
+
+st3_b %>% select(sofa_pulm, SOFA_pulm_missingPulmAsNormal_n, SOFA_pulm_modifiedPulm_n, SOFA_pulm_convertedA_n, SOFA_pulm_convertedB_n, SOFA_pulm_mice_n) %>% arrange(desc(sofa_pulm))
+
+st3_c <- map_dfc(pulm_list, function(x) {
+  sofa_total <- str_replace(x, "SOFA_pulm", "SOFA_total")
+  out <-
+    dat_all %>%
+   # group_by(.data[[x]]) %>%
+    filter(!is.na(SOFA_pulm_half)) %>%
+    summarise(
+            median = median(.data[[sofa_total]]),
+            lower_iqr = quantile(.data[[sofa_total]], .25),
+            upper_iqr = quantile(.data[[sofa_total]], .75)) %>%
+    mutate(med_iqr = paste0(median, " (", lower_iqr, ", ", upper_iqr,")")) %>%
+    select( med_iqr)
+  #colnames(out)[1] <- "sofa_pulm"
+  colnames(out) <- paste0(x, "_", colnames(out))
+  return(out)
+}
+) %>%
+  gt() %>%
+  tab_header("SOFA Total Median IQR by Substitution Method")
+st3_c
+st3_c %>% as.data.frame() %>% write_csv(here::here("output/manuscript_tbls/st3_c.csv"))
+```
+
+
+## Availability of PF ratios over the years - blue bars for O2 :)
+
+```{r, fig.height=4, fig.width=6}
+pf_counts_yr <- dat_all %>%
+  mutate(year = lubridate::year(icu_overall_start_date),
+         has_pf = !is.na(SOFA_pulm_PF_d1)) %>%
+  group_by(year) %>%
+  count(has_pf) %>%
+  mutate(freq = n/sum(n))
+
+pf_counts_yr %>%
+  filter(has_pf == T) %>%
+  ggplot(aes(year, freq, label=n)) +
+  geom_bar(stat="identity", fill="navy") +
+  labs(x = "Year of Admission", y = "Proportion of Patients with PaO2",
+       title = "Proportion of Patients with a PaO2 Measurement by Year of Admission"
+       ) +
+  scale_y_continuous(expand = c(0,0)) +
+  theme_classic(base_size = 10)  +
+  scale_x_continuous(breaks = seq(2011, 2018, 1))#+
+  #geom_label()
+ggsave(here::here("output/manuscript_figs/pao2_year.jpg"), width=6, height=4)
+```
+
+## Imputed Pao2/spo2 for each substitution technique 
+
+In population without PaO2 available 
+
+### SF Ratio
+
+```{r, fig.height=3.5, fig.width=3.5}
+pao2_imputed <-
+  # patients without pao2
+  data_list[[2]] %>%
+  # keep their imputed pf ratios and true fio2 ratios
+  select(SOFApulm_SF_ratio_d1,
+         SOFA_pulm_convertedA_PF,
+         SOFA_pulm_convertedB_PF,
+         SOFA_pulm_mice_PF,
+         SOFApulm_SF_fiO2_d1) %>%
+  mutate(convertedA_pao2 = SOFA_pulm_convertedA_PF * SOFApulm_SF_fiO2_d1,
+         convertedB_pao2 = SOFA_pulm_convertedB_PF * SOFApulm_SF_fiO2_d1,
+         mice_pao2 = SOFA_pulm_mice_PF * SOFApulm_SF_fiO2_d1)
+
+pao2_imputed %>%
+  ggplot(aes(SOFApulm_SF_ratio_d1)) +
+  geom_histogram() +
+  theme_bw() +
+  labs(x = "SF Ratio", y="Count", title="Distribution of SpO2/FiO2", subtitle = "Among Patients without PaO2") +
+  xlim(c(0,480))
+```
+
+### PaO2
+
+```{r, fig.height=3.5}
+
+pao2_imputed %>%
+  pivot_longer(cols = convertedA_pao2:mice_pao2,
+               names_to = "type",
+               values_to = "pao2") %>%
+  mutate(type = case_when(type == "convertedA_pao2" ~ "RICE",
+                          type == "convertedB_pao2" ~ "Severinghaus",
+                          type == "mice_pao2" ~ "MICE"),
+         type = fct_relevel(type, "RICE","Severinghaus")) %>%
+  ggplot(aes(pao2, fill=type)) +
+  geom_histogram() +
+  facet_wrap(~type) +
+  labs(x = "Imputed PaO2", y="Count", title="PaO2 by Substitution", subtitle = "Among Patients without PaO2") +
+  theme_bw() +
+  guides(fill=F) +
+  scale_fill_manual(values = type_colors[3:5])+
+  xlim(c(0,700))
+```
+
+### PF Ratio
+
+```{r, fig.height=3.5}
+pao2_imputed_to_plot <-
+  pao2_imputed %>%
+  pivot_longer(cols = c(SOFApulm_SF_ratio_d1:SOFA_pulm_mice_PF),
+               names_to = "type",
+               values_to = "pf") %>%
+  mutate(type = case_when(type == "SOFApulm_SF_ratio_d1" ~ "Modified",
+                          type == "SOFA_pulm_convertedA_PF" ~ "RICE",
+                          type == "SOFA_pulm_convertedB_PF" ~ "Severinghaus",
+                          type == "SOFA_pulm_mice_PF" ~ "MICE"),
+         type = fct_relevel(type,"Modified", "RICE","Severinghaus"))
+  
+plot_pf_ratio <- function(which_type, type_col, pf_or_sf = "PaO2/FiO2", max_y = 35000){
+  pao2_imputed_to_plot %>%
+    filter(type == which_type) %>%
+    ggplot(aes(pf)) +
+  geom_histogram(fill = type_col) +
+  labs(x = pf_or_sf, y="Count", title = which_type) +
+  theme_bw() +
+  guides(fill=F) +
+  xlim(c(0,700)) +
+  scale_y_continuous(expand=c(0,0),limits=c(0,max_y))
+}
+
+plot_pf_ratio("Modified",type_colors[2], pf_or_sf = "SpO2/FiO2", max_y = 3500) +
+plot_pf_ratio("RICE",type_colors[3], pf_or_sf = "PaO2/FiO2", max_y = 6000) +
+plot_pf_ratio("Severinghaus",type_colors[4], pf_or_sf = "PaO2/FiO2", max_y = 3000) +
+plot_pf_ratio("MICE",type_colors[5], pf_or_sf = "PaO2/FiO2", max_y = 2000) +
+  plot_layout(ncol=2) +
+  plot_annotation(tag_levels = "A")
+
+ggsave(here::here("output/manuscript_figs/pf_by_sub.jpg"), width=6, height=5)
+
+
+# 
+# plot_pf_ratio_dens <- function(which_type, type_col, pf_or_sf = "PaO2/FiO2"){
+#   pao2_imputed_to_plot %>%
+#     filter(type == which_type) %>%
+#     ggplot(aes(pf)) +
+#   geom_density(fill = type_col) +
+#   labs(x = pf_or_sf, y="Count", title = which_type) +
+#   theme_bw() +
+#   guides(fill=F) +
+#   xlim(c(0,700)) +
+#   scale_y_continuous(expand=c(0,0))
+# }
+# 
+# plot_pf_ratio_dens("Modified",type_colors[2], pf_or_sf = "SpO2/FiO2") +
+# plot_pf_ratio_dens("RICE",type_colors[3], pf_or_sf = "PaO2/FiO2") +
+# plot_pf_ratio_dens("Severinghaus",type_colors[4], pf_or_sf = "PaO2/FiO2") +
+# plot_pf_ratio_dens("MICE",type_colors[5], pf_or_sf = "PaO2/FiO2") +
+#   plot_layout(ncol=2) +
+#   plot_annotation(tag_levels = "A")
+# 
+# ggsave(here::here("output/manuscript_figs/pf_by_sub.jpg"), width=6, height=5)
+
+```
+
+## Median IQR to report in figure legends
+
+```{r}
+med_iqr_tbl <-
+  pao2_imputed %>%
+  labelled::set_variable_labels(
+    SOFApulm_SF_ratio_d1 = "SF Ratio",
+    SOFA_pulm_convertedA_PF = "RICE PF Ratio",
+    SOFA_pulm_convertedB_PF = "Severinghaus PF Ratio",
+    SOFA_pulm_mice_PF = "MICE PF Ratio",
+    SOFApulm_SF_fiO2_d1 = "FiO2",
+    convertedA_pao2 = "RICE PaO2",
+    convertedB_pao2 = "Severinghaus PaO2",
+    mice_pao2 = "MICE PaO2"
+  ) %>%
+  tbl_summary()  %>%
+  as_gt() %>%
+  tab_header("Median IQR of Relevant Measures in Population without PaO2")
+med_iqr_tbl
+
+med_iqr_tbl %>%
+  as.data.frame() %>%
+  write_csv(here::here("output/manuscript_tbls/med_iqr_no_po2_tbl.csv"))
+```
+
+## Non pulmonary sofa score
+
+Overall and by PF ratio attainment
+
+```{r}
+dat_all %>%
+  summarise(median(SOFA_total_noPulm_d1),
+            quantile(SOFA_total_noPulm_d1, .25),
+            quantile(SOFA_total_noPulm_d1, .75))
+
+dat_all %>%
+  mutate(has_pf = case_when(!is.na(SOFA_pulm_PF_d1) ~ "Has PF",
+                            TRUE ~ "No PF")) %>%
+  group_by(has_pf) %>%
+  summarise(n(),
+            median(SOFA_total_noPulm_d1),
+            quantile(SOFA_total_noPulm_d1, .25),
+            quantile(SOFA_total_noPulm_d1, .75))
+```
+
+
+
+
+
+
+
+
+

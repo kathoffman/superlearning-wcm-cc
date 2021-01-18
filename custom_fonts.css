@@ -1,0 +1,25 @@
+@import url(https://fonts.googleapis.com/css?family=Open+Sans);
+@import url(https://fonts.googleapis.com/css?family=Oswald);
+@import url(https://fonts.googleapis.com/css?family=Inconsolata);
+
+body { font-family: 'Open Sans'; }
+
+h1, h2, h3 { font-family: 'Oswald'; }
+
+.remark-code, .remark-inline-code { 
+  font-family: 'Inconsolata'; color: #B31B1B; 
+  background-color: #f3f3f3;  font-size: 90%; 
+}
+
+.bolder { font-weight: bolder; color: #CF4520; }
+
+.large { font-size: 120%; }
+
+.small { font-size: 80%; }
+
+.footnote {
+  position: absolute;
+  bottom: 3em;
+  padding-right: 4em;
+  font-size: 60%;
+}

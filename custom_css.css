@@ -1,0 +1,90 @@
+a, a > code {
+  color: #B31B1B;
+  font-weight: bold;
+  border-bottom: 1px dotted #B31B1B;
+  text-decoration: none;
+  transition: all .2s ease-in-out
+}
+
+a:hover { 
+  font-size: 1.05em; 
+  border-bottom: 1px solid #E87722;
+}
+
+.highlight {
+    background-color: rgba(252,227,0,.2);
+}
+
+.remark-slide-number { font-size: 0.6em; }
+
+.remark-code-line-highlighted { background-color: #CF4520 ; }
+
+.remark-slide-content {
+  border-right: 11px solid #B31B1B;
+  border-left: 11px solid #B31B1B;
+  padding: 1em 2em 1em 2em
+}
+
+.remark-slide-content > h1 {
+  font-weight: normal;
+  margin-top: 10px;
+  margin-left: -00px;
+}
+
+.remark-slide-content > h2, .pull-left > h2, .pull-right > h2 {
+  font-size: 35px;
+}
+.remark-slide-content > h3, .pull-left > h3, .pull-right > h3 {
+  font-size: 25px;
+}
+
+h1, h2, h3 {
+  font-weight: normal;
+  color: #000000;
+}
+
+.inverse {
+  border-left: 11px solid #fff;
+  border-right: 11px solid #fff;
+  background-color: #B31B1B;
+  color: #B31B1B;
+}
+
+.inverse h1, .inverse h2, .inverse h3 {
+  color: #f3f3f3;
+}
+
+table {
+  margin: auto;
+  font-size: 90%;
+  border-top: 1px solid #666;
+  border-bottom: 1px solid #666;
+}
+
+.center {
+  align-content: center;  
+}
+
+.right {
+  align-content: right;  
+}
+
+.left {
+  align-content: left;  
+}
+
+.shrink {
+  margin: auto;
+  width: 90%;
+}
+
+.enlarge{
+  margin: auto;
+  width: 110%;
+}
+
+.black-outline {
+   background-color: #000000;
+   padding:50px;
+   display: inline-block;
+}
