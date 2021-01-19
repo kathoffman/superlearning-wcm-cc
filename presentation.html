@@ -6,8 +6,8 @@
     <meta name="author" content="Kat Hoffman" />
     <meta name="date" content="2021-01-19" />
     <link href="presentation_files/remark-css/default.css" rel="stylesheet" />
-    <link href="presentation_files/remark-css/tamu.css" rel="stylesheet" />
-    <link href="presentation_files/remark-css/tamu-fonts.css" rel="stylesheet" />
+    <link rel="stylesheet" href="custom_css.css" type="text/css" />
+    <link rel="stylesheet" href="custom_fonts.css" type="text/css" />
   </head>
   <body>
     <textarea id="source">
@@ -50,6 +50,7 @@ p.caption {
 
 --
 
+
 ## Today's presentations has two parts:
 
 --
@@ -64,11 +65,11 @@ p.caption {
 
 --
 
-- Part II is covered in my blog post on superlearning: https://www.khstats.com/blog/sl/superlearning/
+- Part II is covered in my [blog post](https://www.khstats.com/blog/sl/superlearning/) on superlearning 
 
 --
 
-- The recording of this talk will be on the WCM Computing Club website: https://wcm-computing-club.github.io/bcc_schedule.html
+- The recording of this talk will be on the [WCM Computing Club]( https://wcm-computing-club.github.io/bcc_schedule.html) website
 
 ---
 class: inverse, center, middle
@@ -87,7 +88,9 @@ class: inverse, center, middle
 
 --
 
-- The process of **combining multiple statistical models** with the goal of creating a final model that is **better than any individual model** would be by itself
+- The process of **combining multiple statistical learning models** with the goal of creating a final model that is **better than any individual model** would be by itself
+
+&lt;!--   - Broad definition of *statistical learning model*: any parametric or non-parametric supervised or unsupervised classification or regression function --&gt;
 
 &lt;!-- -- --&gt;
 
@@ -95,7 +98,10 @@ class: inverse, center, middle
   
 --
 
-&lt;img src="img/Jarusalem-Quartet-String-Quartet-56a1541a5f9b58b7d0be5177.jpg" width="300" style="display: block; margin: auto;" /&gt;
+&lt;div class="figure" style="text-align: center"&gt;
+&lt;img src="img/Jarusalem-Quartet-String-Quartet-56a1541a5f9b58b7d0be5177.jpg" alt="Jerusalem String Quartet. Image source: LiveAbout.com" width="300" /&gt;
+&lt;p class="caption"&gt;Jerusalem String Quartet. Image source: LiveAbout.com&lt;/p&gt;
+&lt;/div&gt;
 
 --
 
@@ -186,7 +192,7 @@ final_prediction &lt;- mean(c(model_1, model_2, model_3))
 
 --
 
-- **Decision tree**: simple, interpretable algorithm to sequentially split observations with the most homogenous responses via "branches" until you are left with terminal "leaves" of outcome response predictions
+- **Decision tree**: simple, interpretable algorithm to sequentially split observations with the most homogenous responses. Each split is a "branch" and the terminal nodes, or "leaves", denote the outcome predictions
 
 --
 
@@ -231,6 +237,29 @@ final_prediction &lt;- mean(c(model_1, model_2, model_3))
 --
 
 &lt;img src="img/boosting.png" width="500" style="display: block; margin: auto;" /&gt;
+
+---
+
+# Boosting
+
+--
+
+- Similarly to bagging, we want to compile weak models. Two main ways to do this:
+
+--
+
+  - **Adaptive boosting:** Adjust model by **assigning a higher weight** to the predictions the previous model got wrong
+  
+--
+
+  - **Gradient boosting:** Adjust model by making a **new model to predict the errors of the previous model** and adding that error prediction to the previous model
+  
+--
+
+- I recommend this [interactive tutorial]( https://arogozhnikov.github.io/2016/06/24/gradient_boosting_explained.html
+) to learn more:
+
+&lt;img src="img/gradient_boosting_tutorial.png" width="400" style="display: block; margin: auto;" /&gt;
 
 
 ---
@@ -281,7 +310,7 @@ final_prediction &lt;- mean(c(model_1, model_2, model_3))
 
 ---
 
-# What's the difference between stacking and superlearning?
+# Stacking vs. superlearning?
 
 --
 
@@ -289,7 +318,7 @@ final_prediction &lt;- mean(c(model_1, model_2, model_3))
 
 --
 
-- When van der Laan et. al proved the theoretical properties, referred to the algorithm as "Super Learning", so "superlearning" has gained popularity in statistics literature, while "stacking" is popular in the larger data science/machine learning community
+- When van der Laan et. al proved the theoretical properties, referred to the algorithm as "superlearning," which gained popularity in statistics literature, while "stacking" is frequently used in the larger data science/machine learning community
 
 --
 
@@ -771,18 +800,20 @@ obs &lt;- tibble(
 
 --
 
-- An example of a candidate base learner library for a continuous outcome might be: linear regression, LASSO, random forests, and multivariate adaptive regression splines (MARS)
+- Can be any parametric or non-parametric statistical learning algorithm
+
+  - Best to choose a diverse range of learners
+
+  - An example of a candidate base learner library for a continuous outcome might be linear regression, LASSO, random forests, and multivariate adaptive regression splines (MARS)
 
 --
 
 - Here we will use three different linear regression models *only so that code for more complicated models is not distracting*
 
 --
-1. **Learner A**:
-`$$Y=\beta_0 + \beta_1 X_2 + \beta_2 X_4 + \epsilon$$`
+1. **Learner A**: `\(Y=\beta_0 + \beta_1 X_2 + \beta_2 X_4 + \epsilon\)`
 
-2. **Learner B**:
-`$$Y=\beta_0 + \beta_1 X_1 + \beta_2 X_2 + \beta_3 X_1 X_3 + \beta_4 sin(X_4)  + \epsilon$$`
+2. **Learner B**: `\(Y=\beta_0 + \beta_1 X_1 + \beta_2 X_2 + \beta_3 X_1 X_3 + \beta_4 sin(X_4)  + \epsilon\)`
 
 3. **Learner C**:
 `$$Y=\beta_0 + \beta_1 X_1 + \beta_2 X_2 + \beta_3 X_3 + \beta_4 X_1 X_2 + \beta_5 X_1 X_3 + \beta_6 X_2 X_3 + \beta_7 X_1 X_2 X_3  + \epsilon$$`
@@ -833,7 +864,7 @@ cv_index &lt;- rep(1:k, each = n/k) # create indices for each CV fold
 
 ---
 
-# Step 2: Fit base learners for first CV-fold
+# Step 2: Fit base learners on first CV-fold
 
 --
 
@@ -841,7 +872,7 @@ cv_index &lt;- rep(1:k, each = n/k) # create indices for each CV fold
 
 --
 
-&lt;img src="img/sl_steps/step2.png" width="350" style="display: block; margin: auto;" /&gt;
+&lt;img src="img/sl_steps/step2.png" width="300" style="display: block; margin: auto;" /&gt;
 
 --
 
@@ -1269,7 +1300,7 @@ pred_1c &lt;- predict(fit_1c, newdata = cv_valid_1)
 
 ---
 
-# Step 4: Obtain CV predictions for entire data set
+# Step 4: CV predictions for entire data
 
 --
 
@@ -1298,24 +1329,21 @@ get_preds &lt;- function(fold){
 ```
 
 --
-
 Loop through every `fold` (`1:k`) and binds the rows of results together:
 
 ```r
 cv_preds &lt;- purrr::map_dfr(cv_folds, ~get_preds(fold = .x))
 ```
-
 ---
 
-# Step 4, cont.: CV predictions for entire data set
+# Step 4: CV predictions for entire data
 
 --
-
 - Each observation has now participated in one validation set, so we have three vectors of CV-predictions that are the same length as the full data
 
 --
 
-&lt;img src="img/sl_steps/step4.png" width="300" style="display: block; margin: auto;" /&gt;
+&lt;img src="img/sl_steps/step4.png" width="250" style="display: block; margin: auto;" /&gt;
 --
 
 <style>html {
@@ -1708,7 +1736,7 @@ cv_preds &lt;- purrr::map_dfr(cv_folds, ~get_preds(fold = .x))
 
 ---
 
-# Step 5: Choose and compute loss function of interest via metalearner
+# Step 5: Fit metalearner
 
 --
 
@@ -1732,7 +1760,7 @@ sl_fit &lt;- glm(y ~ pred_a + pred_b + pred_c, data = obs_preds)
 
 ---
 
-# Step 5, cont.: Choose and compute loss function of interest via metalearner
+# Step 5: Fit metalearner
 
 --
 
@@ -2130,7 +2158,7 @@ sl_fit &lt;- glm(y ~ pred_a + pred_b + pred_c, data = obs_preds)
 
 ---
 
-# Step 6: Fit base learners on entire data set
+# Step 6: Fit base learners on entire data
 
 --
 
@@ -2138,7 +2166,7 @@ sl_fit &lt;- glm(y ~ pred_a + pred_b + pred_c, data = obs_preds)
 
 --
 
-&lt;img src="img/sl_steps/step6.png" width="360" style="display: block; margin: auto;" /&gt;
+&lt;img src="img/sl_steps/step6.png" width="300" style="display: block; margin: auto;" /&gt;
 
 --
 
@@ -2177,11 +2205,11 @@ full_data_preds &lt;- tibble(pred_a, pred_b, pred_c)
 
 ---
 
-# Step 8: Use metalearner fit to weight base learners
+# Step 8: Weight base learners from entire data
 
 --
 
-- Now use the base learner predictions (from the full data set) as inputs to the metalearner fit we found in Step 5. This will apply the appropriate weight to each base learner prediction.
+- Use the base learner predictions (from the full data set) as inputs to the metalearner fit to apply the appropriate weight to each base learner prediction.
 
 --
 
@@ -2622,7 +2650,7 @@ sl_mse &lt;- mean((obs$y - sl_predictions)^2)
 
 - Or, we could look at the MSE for each CV-fold:
 
-&lt;img src="presentation_files/figure-html/unnamed-chunk-41-1.png" width="400" style="display: block; margin: auto;" /&gt;
+&lt;img src="presentation_files/figure-html/unnamed-chunk-42-1.png" width="400" style="display: block; margin: auto;" /&gt;
 
 
 ---
@@ -2653,8 +2681,15 @@ discrete_sl_predictions &lt;- predict(glm(y ~ x1 + x2 + x1*x3 + sin(x4), data=ob
 --
 
   - Alternatively, we could leave a hold-out data set for testing
-  
-  
+
+---
+
+# In summary...
+
+&lt;img src="img/Superlearning.jpg" width="550" style="display: block; margin: auto;" /&gt;
+
+A printable pdf of this cheat sheet is on my [Github](https://github.com/hoffmakl/causal-inference-visual-guides/blob/master/visual-guides/Superlearner.pdf).
+
 ---
 
 # Using the SuperLearner package
@@ -2685,7 +2720,7 @@ sl_fit &lt;- SuperLearner(Y = obs$y,
 
 --
 
-- Detailed vignette: https://cran.r-project.org/web/packages/SuperLearner/vignettes/Guide-to-SuperLearner.html
+- Detailed [vignette](https://cran.r-project.org/web/packages/SuperLearner/vignettes/Guide-to-SuperLearner.html)
 
 ---
 
@@ -2721,16 +2756,7 @@ sl_fit
 
 --
 
-  - Default is Non-Negative Least Squares (NNLS) using `nnls` package
-  
-  - NNLS = linear regression with coefficients restrained to non-negative numbers
-  
-  - `SuperLearner` reweights so that the coefficients sum to 1 because simulation studies show a **convex combination** metalearner yields the best results
-  
-    - *Convex combination:* fitting the following regression, where `\(\alpha_1\)`, `\(\alpha_2\)`, and `\(\alpha_3\)` are all non-negative and sum to 1.
-
-`$$\mathrm{E}[Y|\hat{Y}_{LrnrA},\hat{Y}_{LrnrB},\hat{Y}_{LrnrC}] = \alpha_1\hat{Y}_{LrnrA} + \alpha_2\hat{Y}_{LrnrB} + \alpha_3\hat{Y}_{LrnrC}$$`
-    - Notably, reweighting the coefficients after fitting NNLS is not a true convex combination
+  - Default is Non-Negative Least Squares (NNLS) using `nnls` package (linear regression with coefficients restrained to non-negative numbers)
   
 ---
 
@@ -2762,13 +2788,23 @@ sl_fit
 
 class: inverse, center, middle
 
-# Thanks for Listening!
+# Questions?
 
 Slides made with {xaringan}
 
 Email: kah2797@med.cornell.edu
 
 ---
+
+# Extra: Convex combination as a metalearner
+
+- `SuperLearner` reweights NNLS so that the coefficients sum to 1 because simulation studies show a **convex combination** metalearner yields the best results
+  
+- *Convex combination:* fitting the following regression, where `\(\alpha_1\)`, `\(\alpha_2\)`, and `\(\alpha_3\)` are all non-negative and sum to 1.
+
+`$$\mathrm{E}[Y|\hat{Y}_{LrnrA},\hat{Y}_{LrnrB},\hat{Y}_{LrnrC}] = \alpha_1\hat{Y}_{LrnrA} + \alpha_2\hat{Y}_{LrnrB} + \alpha_3\hat{Y}_{LrnrC}$$`
+
+- Notably, reweighting the coefficients after fitting NNLS is not a true convex combination
     </textarea>
 <style data-target="print-only">@media screen {.remark-slide-container{display:block;}.remark-slide-scaler{box-shadow:none;}}</style>
 <script src="https://remarkjs.com/downloads/remark-latest.min.js"></script>
