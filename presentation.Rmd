@@ -928,24 +928,37 @@ sl_fit
 
 class: inverse, center, middle
 
-# Questions?
+## Questions?
 
-Slides made with {xaringan}
+**Slides:** {xaringan}
 
 **Email:** kah2797@med.cornell.edu
 
-**References and additional resources:**
-khstats.com/blog/sl/superlearning
-
 ---
 
-# Extra: Convex combination as a metalearner
+# References
 
-- `SuperLearner` reweights NNLS so that the coefficients sum to 1 because simulation studies show a **convex combination** metalearner yields the best results
+MJ Van der Laan, EC Polley, AE Hubbard, Super Learner,  Statistical applications in genetics and molecular, 2007
 
-- *Convex combination:* fitting the following regression, where $\alpha_1$, $\alpha_2$, and $\alpha_3$ are all non-negative and sum to 1.
+Polley, Eric. “Chapter 3: Superlearning.” Targeted Learning: Causal Inference for Observational and Experimental Data, by M. J. van der. Laan and Sherri Rose, Springer, 2011.
 
-$$\mathrm{E}[Y|\hat{Y}_{LrnrA},\hat{Y}_{LrnrB},\hat{Y}_{LrnrC}] = \alpha_1\hat{Y}_{LrnrA} + \alpha_2\hat{Y}_{LrnrB} + \alpha_3\hat{Y}_{LrnrC}$$
+Polley E, LeDell E, Kennedy C, van der Laan M. Super Learner: Super Learner Prediction. R package version 2.0-22.
 
-- Notably, reweighting the coefficients after fitting NNLS is not a true convex combination
-  
+Naimi AI, Balzer LB. Stacked generalization: an introduction to super learning. *Eur J Epidemiol.* 2018;33(5):459-464. doi:10.1007/s10654-018-0390-z
+
+LeDell, E. (2015). Scalable Ensemble Learning and Computationally Efficient Variance Estimation. UC Berkeley. ProQuest ID: LeDell_berkeley_0028E_15235. Merritt ID: ark:/13030/m5wt1xp7.
+
+M. Petersen and L. Balzer. [Introduction to Causal Inference](www.ucbbiostat.com). UC Berkeley, August 2014.
+
+<!-- --- -->
+
+<!-- # Extra: Convex combination as a metalearner -->
+
+<!-- - `SuperLearner` reweights NNLS so that the coefficients sum to 1 because simulation studies show a **convex combination** metalearner yields the best results -->
+
+<!-- - *Convex combination:* fitting the following regression, where $\alpha_1$, $\alpha_2$, and $\alpha_3$ are all non-negative and sum to 1. -->
+
+<!-- $$\mathrm{E}[Y|\hat{Y}_{LrnrA},\hat{Y}_{LrnrB},\hat{Y}_{LrnrC}] = \alpha_1\hat{Y}_{LrnrA} + \alpha_2\hat{Y}_{LrnrB} + \alpha_3\hat{Y}_{LrnrC}$$ -->
+
+<!-- - Notably, reweighting the coefficients after fitting NNLS is not a true convex combination -->
+

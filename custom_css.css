@@ -1,14 +1,14 @@
 a, a > code { 
-  color: #a30000;
+  color: #910000;
   font-weight: bold;
-  border-bottom: 1px dotted #a30000; 
+  border-bottom: 1px dotted #910000; 
   text-decoration: none;
   transition: all .2s ease-in-out
 }
 
 a:hover { 
   font-size: 1.05em; 
-  border-bottom: 1px solid #a30000;
+  border-bottom: 1px solid #910000;
 }
 
 .highlight {
@@ -20,8 +20,8 @@ a:hover {
 .remark-code-line-highlighted { background-color: #d3d3d3 ; }
 
 .remark-slide-content {
-  border-right: 11px solid #a30000;
-  border-left: 11px solid #a30000;
+  border-right: 11px solid #910000;
+  border-left: 11px solid #910000;
   padding: 1em 2em 1em 2em
 }
 
@@ -48,7 +48,7 @@ h1, h2, h3 {
 .inverse {
   border-left: 11px solid #fff;
   border-right: 11px solid #fff;
-  background-color: #a30000;
+  background-color: #910000;
   color: #ffe0e0;
 }
 
